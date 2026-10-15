@@ -35,3 +35,7 @@ main{display:flex;height:calc(100vh - 52px)}#gridWrap{flex:1;overflow:auto}
 .sep{border-top:1px solid #eee;margin:8px 0}.lnk{border:0;background:none;padding:6px 0;width:100%;text-align:right}.tg{display:block;width:100%;margin:8px 0;padding:8px;border-radius:8px}.tg.on{background:#111;color:#fff}
 .ft{margin-top:12px}.blk{background:#111;color:#fff;font-weight:700}.red{background:#ef4444;color:#fff;border-color:#ef4444;font-weight:700}.emsg{color:#c00;font-size:13px;margin-top:6px}
 .bdr{display:grid;grid-template-columns:1.3fr 1fr 1fr auto;gap:4px;margin:4px 0}.bdr input{min-width:0;padding:4px;border:1px solid #ddd;border-radius:5px;font:inherit;font-size:13px}
+
+.L .t,.L .n{font-size:.88em}.L .t{white-space:nowrap}.nw{white-space:nowrap}.L{overflow-wrap:normal;word-break:normal;padding:3px 3px}
+.L.note{white-space:nowrap;display:flex;align-items:center;justify-content:center}
+#gridX .L{font-family:system-ui,Arial,sans-serif}

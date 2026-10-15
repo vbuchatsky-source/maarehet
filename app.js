@@ -25,6 +25,10 @@ async function createLessons(arr){push();const rows=err(await sb.from("lessons")
 async function updLessons(ids,patch,noHist){if(!noHist)push();S.lessons.forEach(l=>{if(ids.includes(l.id))Object.assign(l,patch)});render();err(await sb.from("lessons").update(patch).in("id",ids))}
 async function updEach(list){push();list.forEach(([id,p])=>Object.assign(S.lessons.find(l=>l.id===id),p));render();await Promise.all(list.map(([id,p])=>sb.from("lessons").update(p).eq("id",id).then(err)))}
 async function delLessons(ids){push();S.lessons=S.lessons.filter(l=>!ids.includes(l.id));ids.forEach(i=>S.sel.delete(i));render();err(await sb.from("lessons").delete().in("id",ids))}
+const nw=t=>esc(t).replace(/(\S+ )?\d{1,2}:\d{2}(-\d{1,2}:\d{2})?/g,m=>`<span class="nw">${m}</span>`);
+function fit(root){root.querySelectorAll(".L").forEach(el=>{let f=el.classList.contains("note")?16:15;el.style.fontSize=f+"px";
+ while(f>9&&(el.scrollHeight>el.clientHeight+1||el.scrollWidth>el.clientWidth+1)){f-=.5;el.style.fontSize=f+"px"}})}
+addEventListener("resize",()=>fit($("#grid")));
 const shiftBD=(bd,d)=>(bd||[]).map(b=>({...b,start_time:toT(toM(b.start_time)+d),end_time:toT(toM(b.end_time)+d)}));
 
 async function loadAll(){
@@ -38,10 +42,10 @@ let chan;function subscribe(){if(chan)sb.removeChannel(chan);if(!S.active)return
  if(p.eventType==="DELETE"){S.lessons=S.lessons.filter(l=>l.id!==p.old.id)}else{const n=p.new;if(n.schedule_id!==S.active)return;const i=S.lessons.findIndex(l=>l.id===n.id);if(i>=0){if(S.drag)return;S.lessons[i]=n}else S.lessons.push(n)}render()}).subscribe()}
 
 // ---------- layout ----------
-function layout(ls){const out=new Map();for(let d=0;d<7;d++){const day=ls.filter(l=>l.day===d&&!l.cancelled).sort((a,b)=>toM(a.start_time)-toM(b.start_time)||toM(b.end_time)-toM(a.end_time));
+function layout(ls){const out=new Map();for(let d=0;d<7;d++){const day=ls.filter(l=>l.day===d).sort((a,b)=>toM(a.start_time)-toM(b.start_time)||toM(b.end_time)-toM(a.end_time));
  let cl=[],end=-1;const flush=()=>{const cols=[];cl.forEach(l=>{let c=cols.findIndex(e=>e<=toM(l.start_time));if(c<0){c=cols.length;cols.push(0)}cols[c]=toM(l.end_time);out.set(l.id,{c,n:0})});cl.forEach(l=>out.get(l.id).n=cols.length);cl=[]};
  day.forEach(l=>{if(toM(l.start_time)>=end&&cl.length)flush();cl.push(l);end=Math.max(end,toM(l.end_time))});flush();
- ls.filter(l=>l.day===d&&l.cancelled).forEach(l=>out.set(l.id,{c:0,n:1}))}return out}
+}return out}
 
 // ---------- render ----------
 function renderAll(){document.body.classList.toggle("editor",S.editor);renderHeader();renderSide();render()}
@@ -58,9 +62,9 @@ function render(){const g=$("#grid"),H=(DE-DS)/SLOT*RH;g.style.gridTemplateColum
   ls.filter(l=>l.day===d).forEach(l=>{const s=clamp(toM(l.start_time)),e=Math.max(s+SLOT,clamp(toM(l.end_time))),p=lay.get(l.id)||{c:0,n:1},w=100/p.n;
    const cls=["L",l.cancelled?"cx":"",S.sel.has(l.id)?"sel":"",l.is_oneoff&&l.hide_time?"note":"",S.hl.size?(S.hl.has(l.template_id)?"hl":"dim"):""].join(" ");
    const bd=(l.breakdown||[]).length?`<div class="t">${l.breakdown.map(b=>esc(`${b.person||""} ${b.start_time}-${b.end_time}`)).join("<br>")}</div>`:"";
-   h+=`<div class="${cls}" data-id="${l.id}" style="top:${(s-DS)/SLOT*RH+1}px;height:${(e-s)/SLOT*RH-2}px;right:calc(${p.c*w}% + 2px);width:calc(${w}% - 4px);background:${l.color||"#eee"}"><div class="h a"></div>${esc(l.title)}${l.person?`<div class="n">${esc(l.person)}</div>`:""}${l.hide_time?"":`<div class="t">${l.start_time}-${l.end_time}</div>`}${l.notes?`<div class="n">${esc(l.notes)}</div>`:""}${bd}${l.cancelled?`<span class="bdg">בוטל</span>`:""}<div class="h b"></div></div>`});
+   h+=`<div class="${cls}" data-id="${l.id}" style="top:${(s-DS)/SLOT*RH+1}px;height:${(e-s)/SLOT*RH-2}px;right:calc(${p.c*w}% + 2px);width:calc(${w}% - 4px);background:${l.color||"#eee"}"><div class="h a"></div>${nw(l.title)}${l.person&&!(l.is_oneoff&&l.hide_time)?`<div class="n">${esc(l.person)}</div>`:""}${l.hide_time?"":`<div class="t">${l.start_time}-${l.end_time}</div>`}${l.notes?`<div class="n">${nw(l.notes)}</div>`:""}${bd}${l.cancelled?`<span class="bdg">בוטל</span>`:""}<div class="h b"></div></div>`});
   h+=`</div>`}
- g.innerHTML=h;renderPanel()}
+ g.innerHTML=h;fit(g);renderPanel()}
 
 // ---------- row/col resize ----------
 $("#grid").addEventListener("pointerdown",e=>{const t=e.target;if(!S.editor)return;
@@ -179,9 +183,11 @@ document.addEventListener("keydown",e=>{if(!S.editor)return;const inF=/INPUT|TEX
  if(e.key==="Delete"||e.key==="Backspace"){const ids=S.sel.size?[...S.sel]:S.editing?[S.editing]:[];if(ids.length){e.preventDefault();S.editing=null;$("#panel").dataset.k="";delLessons(ids)}}
  if(e.key==="Escape"){S.sel.clear();S.editing=null;render()}});
 $("#shotBtn").onclick=async()=>{const hl=S.hl,sel=S.sel;S.hl=new Set();S.sel=new Set();render();
- try{const c=await html2canvas($("#grid"),{scale:2,backgroundColor:"#fff"});const blob=await new Promise(r=>c.toBlob(r,"image/png"));
+ const box=document.createElement("div");box.style.cssText="position:fixed;left:-10000px;top:0;width:1400px;background:#fff";const cl=$("#grid").cloneNode(true);cl.id="gridX";cl.style.minWidth="0";
+ cl.querySelectorAll(".rr,.cr,#eqW,.h").forEach(e=>e.remove());cl.querySelectorAll(".hd").forEach(e=>e.style.position="static");box.appendChild(cl);document.body.appendChild(box);fit(cl);
+ try{const c=await html2canvas(cl,{scale:2,backgroundColor:"#fff",width:1400,windowWidth:1400});window._shot=c.toDataURL("image/png");const blob=await new Promise(r=>c.toBlob(r,"image/png"));
   try{await navigator.clipboard.write([new ClipboardItem({"image/png":blob})]);toast("התמונה הועתקה")}catch{const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="schedule.png";a.click();toast("התמונה הורדה")}}
- finally{S.hl=hl;S.sel=sel;render()}};
+ finally{box.remove();S.hl=hl;S.sel=sel;render()}};
 
 // ---------- auth ----------
 async function refreshAuth(){const{data:{session}}=await sb.auth.getSession();let ed=false;

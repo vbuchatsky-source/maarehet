@@ -1,12 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const sb = createClient(window.SB_URL, window.SB_ANON);
-const DS=480, DE=1260, SLOT=30, RH=32, DAYS=["א","ב","ג","ד","ה","ו","שבת"];
+const DS=480, DE=1260, SLOT=30, DAYS=["א","ב","ג","ד","ה","ו","שבת"];
 const PAL=["#fff700","#ededed","#3da9f4","#f4b084","#f79696","#fff2cc","#e2eafc","#b6d7a8","#d5a6bd","#ffe599","#a4c2f4","#f9cb9c","#b4a7d6","#a2c4c9"];
 const NOTES=["☀️ יוליה בוקר","🌇 יוליה ערב","🌙 יוליה לילה"];
 const LF=["schedule_id","template_id","day","start_time","end_time","title","person","color","notes","is_oneoff","cancelled","hide_time","breakdown"];
 const $=s=>document.querySelector(s), esc=s=>(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const toM=t=>{const[h,m]=t.split(":").map(Number);return h*60+m}, toT=m=>String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
 const snap=m=>Math.round(m/SLOT)*SLOT, clamp=m=>Math.max(DS,Math.min(DE,m));
+let RH=+localStorage.getItem("rowH")||32, COLW=JSON.parse(localStorage.getItem("colW")||"null")||[1,1,1,1,1,1,1];
 let S={schedules:[],templates:[],lessons:[],active:null,editor:false,sel:new Set(),hist:[],hl:new Set(),undoing:false,editing:null};
 const toast=t=>{const e=$("#toast");e.textContent=t;e.classList.add("on");setTimeout(()=>e.classList.remove("on"),2200)};
 const err=(r)=>{if(r.error){console.error(r.error);toast("שגיאה: "+r.error.message);throw r.error}return r.data};
@@ -49,18 +50,25 @@ function renderHeader(){const vis=S.schedules.filter(s=>!s.archived),ar=S.schedu
  $("#filterSel").innerHTML=`<option value="">כל החוגים</option>`+S.templates.map(t=>`<option value="${t.id}" ${S.hl.size===1&&S.hl.has(t.id)?"selected":""}>${esc(t.title)}</option>`).join("")}
 function renderSide(){$("#tplList").innerHTML=S.templates.map(t=>`<div class="tpl" draggable="true" data-tpl="${t.id}" style="background:${t.color||"#eee"}"><input type="checkbox" data-hl="${t.id}" ${S.hl.has(t.id)?"checked":""} title="הדגש"><span>${esc(t.title)}</span><button class="e" data-et="${t.id}" title="ערוך">✎</button></div>`).join("");
  $("#noteList").innerHTML=NOTES.map(n=>`<div class="note" draggable="true" data-note="${esc(n)}">${esc(n)}</div>`).join("")}
-function render(){const g=$("#grid"),H=(DE-DS)/SLOT*RH;g.style.gridTemplateColumns=`56px repeat(7,1fr)`;g.style.setProperty("--rh",RH+"px");
- let h=`<div class="hd">≡</div>`+DAYS.map(d=>`<div class="hd">${d}</div>`).join("");
- h+=`<div class="tc" style="height:${H}px">`;for(let m=DS+SLOT;m<DE;m+=SLOT)h+=`<div class="tl" style="top:${(m-DS)/SLOT*RH}px">${toT(m)}</div>`;h+=`</div>`;
+function render(){const g=$("#grid"),H=(DE-DS)/SLOT*RH;g.style.gridTemplateColumns=`56px ${COLW.map(w=>w+"fr").join(" ")}`;g.style.setProperty("--rh",RH+"px");
+ let h=`<div class="hd"><button id="eqW" class="ed small" title="שווה עובי" aria-label="שווה עובי">≡</button></div>`+DAYS.map((d,i)=>`<div class="hd">${d}${i<6?`<div class="cr ed" data-cr="${i}" title="גרור לשינוי רוחב"></div>`:""}</div>`).join("");
+ h+=`<div class="tc" style="height:${H}px">`;for(let m=DS+SLOT;m<DE;m+=SLOT)h+=`<div class="tl" style="top:${(m-DS)/SLOT*RH}px">${toT(m)}</div><div class="rr ed" data-rr="${(m-DS)/SLOT}" style="top:${(m-DS)/SLOT*RH}px" title="גרור לשינוי גובה השורות"></div>`;h+=`</div>`;
  const seen=new Set(),ls=S.lessons.filter(l=>!seen.has(l.id)&&seen.add(l.id)),lay=layout(ls);
  for(let d=0;d<7;d++){h+=`<div class="dc" data-day="${d}" style="height:${H}px">`;
   ls.filter(l=>l.day===d).forEach(l=>{const s=clamp(toM(l.start_time)),e=Math.max(s+SLOT,clamp(toM(l.end_time))),p=lay.get(l.id)||{c:0,n:1},w=100/p.n;
    const cls=["L",l.cancelled?"cx":"",S.sel.has(l.id)?"sel":"",l.is_oneoff&&l.hide_time?"note":"",S.hl.size?(S.hl.has(l.template_id)?"hl":"dim"):""].join(" ");
    const bd=(l.breakdown||[]).length?`<div class="t">${l.breakdown.map(b=>esc(`${b.person||""} ${b.start_time}-${b.end_time}`)).join("<br>")}</div>`:"";
-   h+=`<div class="${cls}" data-id="${l.id}" style="top:${(s-DS)/SLOT*RH+1}px;height:${(e-s)/SLOT*RH-2}px;right:calc(${p.c*w}% + 2px);width:calc(${w}% - 4px);background:${l.color||"#eee"}"><div class="h a"></div>${esc(l.title)}${l.person?`<div class="n">${esc(l.person)}</div>`:""}${l.hide_time?"":`<div class="t">${l.start_time}-${l.end_time}</div>`}${l.notes?`<div class="n">${esc(l.notes)}</div>`:""}${bd}<div class="h b"></div></div>`});
+   h+=`<div class="${cls}" data-id="${l.id}" style="top:${(s-DS)/SLOT*RH+1}px;height:${(e-s)/SLOT*RH-2}px;right:calc(${p.c*w}% + 2px);width:calc(${w}% - 4px);background:${l.color||"#eee"}"><div class="h a"></div>${esc(l.title)}${l.person?`<div class="n">${esc(l.person)}</div>`:""}${l.hide_time?"":`<div class="t">${l.start_time}-${l.end_time}</div>`}${l.notes?`<div class="n">${esc(l.notes)}</div>`:""}${bd}${l.cancelled?`<span class="bdg">בוטל</span>`:""}<div class="h b"></div></div>`});
   h+=`</div>`}
  g.innerHTML=h;renderPanel()}
 
+// ---------- row/col resize ----------
+$("#grid").addEventListener("pointerdown",e=>{const t=e.target;if(!S.editor)return;
+ if(t.dataset.rr){e.preventDefault();const k=+t.dataset.rr,top=$("#grid .tc").getBoundingClientRect().top;
+  const mv=ev=>{RH=Math.max(16,Math.min(90,Math.round((ev.clientY-top)/k)));render()};const up=()=>{removeEventListener("pointermove",mv);removeEventListener("pointerup",up);localStorage.setItem("rowH",RH)};addEventListener("pointermove",mv);addEventListener("pointerup",up)}
+ if(t.dataset.cr){e.preventDefault();const i=+t.dataset.cr,x0=e.clientX,w0=[...COLW],tot=w0.reduce((a,b)=>a+b),px=$("#grid").getBoundingClientRect().width-56;
+  const mv=ev=>{const d=(x0-ev.clientX)/px*tot;const a=w0[i]+d,b=w0[i+1]-d;if(a<.3||b<.3)return;COLW[i]=a;COLW[i+1]=b;render()};const up=()=>{removeEventListener("pointermove",mv);removeEventListener("pointerup",up);localStorage.setItem("colW",JSON.stringify(COLW))};addEventListener("pointermove",mv);addEventListener("pointerup",up)}
+ if(t.id==="eqW"){COLW=[1,1,1,1,1,1,1];localStorage.removeItem("colW");render()}});
 // ---------- pointer drag / resize ----------
 const colAt=(x,y)=>document.elementsFromPoint(x,y).find(e=>e.classList?.contains("dc"));
 const minAt=(col,y)=>DS+(y-col.getBoundingClientRect().top)/RH*SLOT;
@@ -73,8 +81,10 @@ $("#grid").addEventListener("pointermove",e=>{const D=S.drag;if(!D)return;if(!D.
   if(D.mode==="top")D.ns=Math.min(m,en-SLOT),D.ne=en;else D.ns=s,D.ne=Math.max(m,s+SLOT);
   el.style.top=(D.ns-DS)/SLOT*RH+1+"px";el.style.height=(D.ne-D.ns)/SLOT*RH-2+"px"}});
 let rzT;
+const openEdit=e=>{const el=e.target.closest(".L");if(!el||!S.editor)return;e.preventDefault();S.sel.clear();S.editing=el.dataset.id;$("#panel").dataset.k="";S.pPos=S.pPos||null;render()};
+$("#grid").addEventListener("contextmenu",openEdit);$("#grid").addEventListener("dblclick",openEdit);
 $("#grid").addEventListener("pointerup",async e=>{const D=S.drag;if(!D)return;S.drag=null;
- if(!D.moved){if(e.ctrlKey||e.metaKey){S.sel.has(D.l.id)?S.sel.delete(D.l.id):S.sel.add(D.l.id);if(S.editing&&!S.sel.has(S.editing))S.sel.add(S.editing);S.editing=null}else{S.sel.clear();S.editing=D.l.id}render();return}
+ if(!D.moved){if(e.ctrlKey||e.metaKey){S.sel.has(D.l.id)?S.sel.delete(D.l.id):S.sel.add(D.l.id);if(S.editing&&!S.sel.has(S.editing))S.sel.add(S.editing);S.editing=null}else{S.sel=new Set([D.l.id])}render();return}
  if(D.mode==="move"){const col=colAt(e.clientX,e.clientY);if(!col){render();return}const dur=toM(D.l.end_time)-toM(D.l.start_time);
   let s=snap(minAt(col,e.clientY)-D.grab);s=Math.max(DS,Math.min(DE-dur,s));const delta=s-toM(D.l.start_time);
   const patch={day:+col.dataset.day,start_time:toT(s),end_time:toT(s+dur),breakdown:shiftBD(D.l.breakdown,delta)};
@@ -98,21 +108,35 @@ function renderPanel(){const P=$("#panel");if(!S.editor){P.classList.add("hidden
  <div class="row"><button data-m="hide">הסתר זמן</button><button data-m="show">הצג זמן</button><button data-m="cx">בטל</button><button data-m="uncx">החזר ביטול</button></div><div class="row"><button data-m="del" style="color:#c00">🗑 מחק</button><button data-m="close">סגור</button></div>`;return}
  const l=S.lessons.find(x=>x.id===S.editing);if(!l){P.classList.add("hidden");P.dataset.k="";return}
  if(P.dataset.k===l.id&&!P.classList.contains("hidden"))return;P.dataset.k=l.id;P.classList.remove("hidden");
- P.innerHTML=`<label>כותרת</label><textarea id="eT" rows="3">${esc(l.title)}</textarea><label>אדם</label><input type="text" id="eP" value="${esc(l.person)}"><label>הערות</label><textarea id="eN" rows="2">${esc(l.notes)}</textarea>
- <label>צבע</label>${pal(l.color,"data-c")}<div class="row">התחלה <input type="time" id="eS" step="1800" value="${l.start_time}"> סיום <input type="time" id="eE" step="1800" value="${l.end_time}"></div>
- <div class="row"><label><input type="checkbox" id="eH" ${l.hide_time?"checked":""}> הסתר זמן</label><label><input type="checkbox" id="eX" ${l.cancelled?"checked":""}> בוטל</label></div>
- <div class="row"><button id="eSave" class="dark" style="width:auto">שמור</button><button id="eDel" style="color:#c00">🗑 מחק</button><button id="eClose">סגור</button></div>`;P.dataset.color=l.color||""}
+ P.innerHTML=`<div class="ph"><b>עריכה מהירה</b><button id="eClose" class="x" aria-label="סגור">×</button></div><div class="pb">
+ <label>שם החוג</label><textarea id="eT" rows="2">${esc(l.title)}</textarea><label>שם האדם</label><input type="text" id="eP" value="${esc(l.person)}"><label>הערות</label><textarea id="eN" rows="2">${esc(l.notes)}</textarea>
+ <label>צבע</label>${pal(l.color,"data-c")}<div class="g2"><div><label>שעת התחלה</label><input type="time" id="eS" step="1800" value="${l.start_time}"></div><div><label>שעת סיום</label><input type="time" id="eE" step="1800" value="${l.end_time}"></div></div>
+ <div class="sep"></div><div id="bdBox"></div><button id="bdAdd" class="lnk">+ פילוח מדריכים לפי שעות</button><div class="sep"></div>
+ <button id="eH" class="tg ${l.hide_time?"on":""}">👁 הסתר זמן</button><button id="eX" class="tg ${l.cancelled?"on":""}">📅 בוטל השבוע</button>
+ <div class="g2 ft"><button id="eDel" class="red">🗑 מחק</button><button id="eSave" class="blk">שמור</button></div><div id="eMsg" class="emsg"></div></div>`;
+ P.dataset.color=l.color||"";S.bd=JSON.parse(JSON.stringify(l.breakdown||[]));drawBD();if(S.pPos){P.style.left=S.pPos[0]+"px";P.style.top=S.pPos[1]+"px"}}
+function drawBD(){$("#bdBox").innerHTML=S.bd.map((b,i)=>`<div class="bdr"><input type="text" placeholder="מדריך" data-bp="${i}" value="${esc(b.person)}"><input type="time" step="1800" data-bs="${i}" value="${b.start_time}"><input type="time" step="1800" data-be="${i}" value="${b.end_time}"><button data-bx="${i}" class="x">×</button></div>`).join("")}
+function readBD(){$("#bdBox").querySelectorAll("input").forEach(x=>{const i=x.dataset.bp??x.dataset.bs??x.dataset.be;const k=x.dataset.bp!=null?"person":x.dataset.bs!=null?"start_time":"end_time";S.bd[i][k]=x.value})}
+function validateBD(bd,s,e){if(!bd.length)return null;const L=bd.map(b=>[toM(b.start_time),toM(b.end_time)]).sort((a,b)=>a[0]-b[0]);
+ if(L[0][0]!==s)return"הקטע הראשון חייב להתחיל בשעת תחילת השיעור";for(let i=0;i<L.length;i++){if(L[i][1]<=L[i][0])return"קטע עם סיום לפני התחלה";if(L[i][0]<s||L[i][1]>e)return"קטע מחוץ לטווח השיעור";if(i&&L[i][0]!==L[i-1][1])return"אסור פערים או חפיפות בין קטעים"}
+ if(L.at(-1)[1]!==e)return"הקטע האחרון חייב להסתיים בשעת סיום השיעור";return null}
 async function saveEdit(){const l=S.lessons.find(x=>x.id===S.editing);if(!l)return;let s=toM($("#eS").value||l.start_time),e=toM($("#eE").value||l.end_time);s=clamp(snap(s));e=clamp(snap(e));if(e<=s)e=Math.min(DE,s+SLOT);
- const p={title:$("#eT").value,person:$("#eP").value||null,notes:$("#eN").value||null,color:$("#panel").dataset.color||null,start_time:toT(s),end_time:toT(e),hide_time:$("#eH").checked,cancelled:$("#eX").checked};
- S.editing=null;$("#panel").dataset.k="";if(Object.keys(p).some(k=>(p[k]??null)!==(l[k]??null)))await updLessons([l.id],p);else render()}
+ readBD();const bd=S.bd.filter(b=>b.start_time&&b.end_time).sort((a,b)=>toM(a.start_time)-toM(b.start_time));const ve=validateBD(bd,s,e);if(ve){$("#eMsg").textContent=ve;return}
+ const p={breakdown:bd,title:$("#eT").value,person:$("#eP").value||null,notes:$("#eN").value||null,color:$("#panel").dataset.color||null,start_time:toT(s),end_time:toT(e),hide_time:$("#eH").classList.contains("on"),cancelled:$("#eX").classList.contains("on")};
+ S.editing=null;$("#panel").dataset.k="";if(Object.keys(p).some(k=>JSON.stringify(p[k]??null)!==JSON.stringify(l[k]??null)))await updLessons([l.id],p);else render()}
 $("#panel").addEventListener("click",async e=>{const t=e.target;
  if(t.dataset.c){$("#panel").dataset.color=t.dataset.c;$("#panel").querySelectorAll(".sw").forEach(s=>s.classList.toggle("on",s===t))}
+ if(t.id==="eH"||t.id==="eX")t.classList.toggle("on");
+ if(t.id==="bdAdd"){readBD();const l=S.lessons.find(x=>x.id===S.editing);const st=S.bd.length?S.bd.at(-1).end_time:$("#eS").value;S.bd.push({person:"",start_time:st,end_time:$("#eE").value});drawBD()}
+ if(t.dataset.bx!=null){readBD();S.bd.splice(+t.dataset.bx,1);drawBD()}
  if(t.id==="eSave")saveEdit();if(t.id==="eClose"){S.editing=null;$("#panel").dataset.k="";render()}if(t.id==="eDel"){const id=S.editing;S.editing=null;$("#panel").dataset.k="";delLessons([id])}
  const ids=[...S.sel];if(t.dataset.mc)updLessons(ids,{color:t.dataset.mc});
  const m=t.dataset.m;if(m==="hide")updLessons(ids,{hide_time:true});if(m==="show")updLessons(ids,{hide_time:false});if(m==="cx")updLessons(ids,{cancelled:true});if(m==="uncx")updLessons(ids,{cancelled:false});
  if(m==="del")delLessons(ids);if(m==="close"){S.sel.clear();render()}});
 $("#panel").addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.tagName!=="TEXTAREA"){e.preventDefault();saveEdit()}if(e.key==="Escape"){S.editing=null;$("#panel").dataset.k="";render()}});
-document.addEventListener("pointerdown",e=>{if(S.editing&&!e.target.closest("#panel")&&!e.target.closest(".L")&&!e.target.closest("#modal"))saveEdit()});
+$("#panel").addEventListener("pointerdown",e=>{if(!e.target.closest(".ph")||e.target.closest("button"))return;const P=$("#panel"),r=P.getBoundingClientRect(),dx=e.clientX-r.left,dy=e.clientY-r.top;
+ const mv=ev=>{S.pPos=[ev.clientX-dx,ev.clientY-dy];P.style.left=S.pPos[0]+"px";P.style.top=S.pPos[1]+"px"};const up=()=>{removeEventListener("pointermove",mv);removeEventListener("pointerup",up)};addEventListener("pointermove",mv);addEventListener("pointerup",up)});
+document.addEventListener("pointerdown",e=>{if(e.button!==0)return;if(S.editing&&!e.target.closest("#panel")&&!e.target.closest(".L")&&!e.target.closest("#modal"))saveEdit()});
 
 // ---------- modal helpers ----------
 function modal(html){$("#modalIn").onclick=null;$("#modalIn").innerHTML=html;$("#modal").classList.remove("hidden");return $("#modalIn")}

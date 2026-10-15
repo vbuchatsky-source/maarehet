@@ -1,0 +1,5 @@
+.secrets
+sql.sh
+node_modules
+dist
+*.sql

@@ -1,0 +1,173 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+const sb = createClient(window.SB_URL, window.SB_ANON);
+const DS=480, DE=1260, SLOT=30, RH=28, DAYS=["א","ב","ג","ד","ה","ו","שבת"];
+const PAL=["#fff700","#ededed","#3da9f4","#f4b084","#f79696","#fff2cc","#e2eafc","#b6d7a8","#d5a6bd","#ffe599","#a4c2f4","#f9cb9c","#b4a7d6","#a2c4c9"];
+const NOTES=["☀️ יוליה בוקר","🌇 יוליה ערב","🌙 יוליה לילה"];
+const LF=["schedule_id","template_id","day","start_time","end_time","title","person","color","notes","is_oneoff","cancelled","hide_time","breakdown"];
+const $=s=>document.querySelector(s), esc=s=>(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const toM=t=>{const[h,m]=t.split(":").map(Number);return h*60+m}, toT=m=>String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
+const snap=m=>Math.round(m/SLOT)*SLOT, clamp=m=>Math.max(DS,Math.min(DE,m));
+let S={schedules:[],templates:[],lessons:[],active:null,editor:false,sel:new Set(),hist:[],hl:new Set(),undoing:false,editing:null};
+const toast=t=>{const e=$("#toast");e.textContent=t;e.classList.add("on");setTimeout(()=>e.classList.remove("on"),2200)};
+const err=(r)=>{if(r.error){console.error(r.error);toast("שגיאה: "+r.error.message);throw r.error}return r.data};
+const pick=l=>Object.fromEntries(LF.map(k=>[k,l[k]]));
+
+// ---------- history ----------
+function push(){if(S.undoing)return;S.hist.push(JSON.parse(JSON.stringify(S.lessons)));if(S.hist.length>50)S.hist.shift();$("#undoBtn").disabled=false}
+async function undo(){if(!S.hist.length||S.undoing)return;S.undoing=true;const snapL=S.hist.pop();const cur=new Map(S.lessons.map(l=>[l.id,l]));const old=new Map(snapL.map(l=>[l.id,l]));
+ try{const del=[...cur.keys()].filter(id=>!old.has(id));if(del.length)err(await sb.from("lessons").delete().in("id",del));
+  const ups=snapL.filter(l=>!cur.has(l.id)||JSON.stringify(pick(cur.get(l.id)))!==JSON.stringify(pick(l)));if(ups.length)err(await sb.from("lessons").upsert(ups.map(l=>({id:l.id,...pick(l)}))));
+  S.lessons=snapL;render()}finally{S.undoing=false;$("#undoBtn").disabled=!S.hist.length}}
+
+// ---------- data ops ----------
+async function createLessons(arr){push();const rows=err(await sb.from("lessons").insert(arr.map(pick)).select());S.lessons.push(...rows);render();return rows}
+async function updLessons(ids,patch,noHist){if(!noHist)push();S.lessons.forEach(l=>{if(ids.includes(l.id))Object.assign(l,patch)});render();err(await sb.from("lessons").update(patch).in("id",ids))}
+async function updEach(list){push();list.forEach(([id,p])=>Object.assign(S.lessons.find(l=>l.id===id),p));render();await Promise.all(list.map(([id,p])=>sb.from("lessons").update(p).eq("id",id).then(err)))}
+async function delLessons(ids){push();S.lessons=S.lessons.filter(l=>!ids.includes(l.id));ids.forEach(i=>S.sel.delete(i));render();err(await sb.from("lessons").delete().in("id",ids))}
+const shiftBD=(bd,d)=>(bd||[]).map(b=>({...b,start_time:toT(toM(b.start_time)+d),end_time:toT(toM(b.end_time)+d)}));
+
+async function loadAll(){
+ const[a,b]=await Promise.all([sb.from("schedules").select("*").order("created_at"),sb.from("lesson_templates").select("*").order("order")]);
+ S.schedules=err(a);S.templates=err(b);
+ let vis=S.schedules.filter(s=>!s.archived);
+ if(!vis.length&&S.editor){const r=err(await sb.from("schedules").insert({name:"מערכת ראשית"}).select());S.schedules.push(...r);vis=r}
+ const saved=localStorage.getItem("activeScheduleId");S.active=vis.find(s=>s.id===saved)?saved:vis[0]?.id;await loadLessons()}
+async function loadLessons(){S.lessons=S.active?err(await sb.from("lessons").select("*").eq("schedule_id",S.active)):[];S.hist=[];S.sel.clear();$("#undoBtn").disabled=true;localStorage.setItem("activeScheduleId",S.active||"");subscribe();renderAll()}
+let chan;function subscribe(){if(chan)sb.removeChannel(chan);if(!S.active)return;chan=sb.channel("l"+S.active).on("postgres_changes",{event:"*",schema:"public",table:"lessons"},p=>{
+ if(p.eventType==="DELETE"){S.lessons=S.lessons.filter(l=>l.id!==p.old.id)}else{const n=p.new;if(n.schedule_id!==S.active)return;const i=S.lessons.findIndex(l=>l.id===n.id);if(i>=0){if(S.drag)return;S.lessons[i]=n}else S.lessons.push(n)}render()}).subscribe()}
+
+// ---------- layout ----------
+function layout(ls){const out=new Map();for(let d=0;d<7;d++){const day=ls.filter(l=>l.day===d&&!l.cancelled).sort((a,b)=>toM(a.start_time)-toM(b.start_time)||toM(b.end_time)-toM(a.end_time));
+ let cl=[],end=-1;const flush=()=>{const cols=[];cl.forEach(l=>{let c=cols.findIndex(e=>e<=toM(l.start_time));if(c<0){c=cols.length;cols.push(0)}cols[c]=toM(l.end_time);out.set(l.id,{c,n:0})});cl.forEach(l=>out.get(l.id).n=cols.length);cl=[]};
+ day.forEach(l=>{if(toM(l.start_time)>=end&&cl.length)flush();cl.push(l);end=Math.max(end,toM(l.end_time))});flush();
+ ls.filter(l=>l.day===d&&l.cancelled).forEach(l=>out.set(l.id,{c:0,n:1}))}return out}
+
+// ---------- render ----------
+function renderAll(){document.body.classList.toggle("editor",S.editor);renderHeader();renderSide();render()}
+function renderHeader(){const vis=S.schedules.filter(s=>!s.archived),ar=S.schedules.filter(s=>s.archived);
+ $("#schedSel").innerHTML=vis.map(s=>`<option value="${s.id}" ${s.id===S.active?"selected":""}>${esc(s.name)}</option>`).join("")+(S.editor&&ar.length?`<optgroup label="ארכיון (בחר לשחזור)">${ar.map(s=>`<option value="r:${s.id}">${esc(s.name)}</option>`).join("")}</optgroup>`:"");
+ $("#filterSel").innerHTML=`<option value="">כל החוגים</option>`+S.templates.map(t=>`<option value="${t.id}" ${S.hl.size===1&&S.hl.has(t.id)?"selected":""}>${esc(t.title)}</option>`).join("")}
+function renderSide(){$("#tplList").innerHTML=S.templates.map(t=>`<div class="tpl" draggable="true" data-tpl="${t.id}" style="background:${t.color||"#eee"}"><input type="checkbox" data-hl="${t.id}" ${S.hl.has(t.id)?"checked":""} title="הדגש"><span>${esc(t.title)}</span><button class="e" data-et="${t.id}" title="ערוך">✎</button></div>`).join("");
+ $("#noteList").innerHTML=NOTES.map(n=>`<div class="note" draggable="true" data-note="${esc(n)}">${esc(n)}</div>`).join("")}
+function render(){const g=$("#grid"),H=(DE-DS)/SLOT*RH;g.style.gridTemplateColumns=`56px repeat(7,1fr)`;g.style.setProperty("--rh",RH+"px");
+ let h=`<div class="hd">≡</div>`+DAYS.map(d=>`<div class="hd">${d}</div>`).join("");
+ h+=`<div class="tc" style="height:${H}px">`;for(let m=DS+SLOT;m<DE;m+=SLOT)h+=`<div class="tl" style="top:${(m-DS)/SLOT*RH}px">${toT(m)}</div>`;h+=`</div>`;
+ const seen=new Set(),ls=S.lessons.filter(l=>!seen.has(l.id)&&seen.add(l.id)),lay=layout(ls);
+ for(let d=0;d<7;d++){h+=`<div class="dc" data-day="${d}" style="height:${H}px">`;
+  ls.filter(l=>l.day===d).forEach(l=>{const s=clamp(toM(l.start_time)),e=Math.max(s+SLOT,clamp(toM(l.end_time))),p=lay.get(l.id)||{c:0,n:1},w=100/p.n;
+   const cls=["L",l.cancelled?"cx":"",S.sel.has(l.id)?"sel":"",l.is_oneoff&&l.hide_time?"note":"",S.hl.size?(S.hl.has(l.template_id)?"hl":"dim"):""].join(" ");
+   const bd=(l.breakdown||[]).length?`<div class="t">${l.breakdown.map(b=>esc(`${b.person||""} ${b.start_time}-${b.end_time}`)).join("<br>")}</div>`:"";
+   h+=`<div class="${cls}" data-id="${l.id}" style="top:${(s-DS)/SLOT*RH+1}px;height:${(e-s)/SLOT*RH-2}px;right:calc(${p.c*w}% + 2px);width:calc(${w}% - 4px);background:${l.color||"#eee"}"><div class="h a"></div>${esc(l.title)}${l.person?`<div class="n">${esc(l.person)}</div>`:""}${l.hide_time?"":`<div class="t">${l.start_time}-${l.end_time}</div>`}${l.notes?`<div class="n">${esc(l.notes)}</div>`:""}${bd}<div class="h b"></div></div>`});
+  h+=`</div>`}
+ g.innerHTML=h;renderPanel()}
+
+// ---------- pointer drag / resize ----------
+const colAt=(x,y)=>document.elementsFromPoint(x,y).find(e=>e.classList?.contains("dc"));
+const minAt=(col,y)=>DS+(y-col.getBoundingClientRect().top)/RH*SLOT;
+$("#grid").addEventListener("pointerdown",e=>{const el=e.target.closest(".L");if(!el||!S.editor||e.button!==0)return;const l=S.lessons.find(x=>x.id===el.dataset.id);
+ const mode=e.target.classList.contains("a")?"top":e.target.classList.contains("b")?"bot":"move";const col=el.parentElement,r=el.getBoundingClientRect();
+ S.drag={l,el,mode,x0:e.clientX,y0:e.clientY,grab:minAt(col,e.clientY)-toM(l.start_time),moved:false,copy:e.ctrlKey||e.metaKey,orig:{...l}};el.setPointerCapture(e.pointerId)});
+$("#grid").addEventListener("pointermove",e=>{const D=S.drag;if(!D)return;if(!D.moved&&Math.hypot(e.clientX-D.x0,e.clientY-D.y0)<5)return;D.moved=true;const el=D.el;
+ if(D.mode==="move"){el.classList.add("drag");el.style.transform=`translate(${e.clientX-D.x0}px,${e.clientY-D.y0}px)`}
+ else{const col=el.parentElement,m=snap(clamp(minAt(col,e.clientY)));const s=toM(D.l.start_time),en=toM(D.l.end_time);
+  if(D.mode==="top")D.ns=Math.min(m,en-SLOT),D.ne=en;else D.ns=s,D.ne=Math.max(m,s+SLOT);
+  el.style.top=(D.ns-DS)/SLOT*RH+1+"px";el.style.height=(D.ne-D.ns)/SLOT*RH-2+"px"}});
+let rzT;
+$("#grid").addEventListener("pointerup",async e=>{const D=S.drag;if(!D)return;S.drag=null;
+ if(!D.moved){if(e.ctrlKey||e.metaKey){S.sel.has(D.l.id)?S.sel.delete(D.l.id):S.sel.add(D.l.id);if(S.editing&&!S.sel.has(S.editing))S.sel.add(S.editing);S.editing=null}else{S.sel.clear();S.editing=D.l.id}render();return}
+ if(D.mode==="move"){const col=colAt(e.clientX,e.clientY);if(!col){render();return}const dur=toM(D.l.end_time)-toM(D.l.start_time);
+  let s=snap(minAt(col,e.clientY)-D.grab);s=Math.max(DS,Math.min(DE-dur,s));const delta=s-toM(D.l.start_time);
+  const patch={day:+col.dataset.day,start_time:toT(s),end_time:toT(s+dur),breakdown:shiftBD(D.l.breakdown,delta)};
+  if(D.copy)await createLessons([{...D.l,...patch}]);else{if(patch.day===D.l.day&&!delta){render();return}await updLessons([D.l.id],patch)}}
+ else{const patch={start_time:toT(D.ns),end_time:toT(D.ne)};push();Object.assign(D.l,patch);render();clearTimeout(rzT);rzT=setTimeout(()=>sb.from("lessons").update(patch).eq("id",D.l.id).then(err),400)}});
+
+// ---------- sidebar drag (HTML5) ----------
+document.addEventListener("dragstart",e=>{const t=e.target;let p=null;if(t.dataset?.tpl)p={tpl:t.dataset.tpl};else if(t.dataset?.note)p={note:t.dataset.note};else if(t.id==="oneoff")p={oneoff:1};if(p)e.dataTransfer.setData("text/plain",JSON.stringify(p))});
+$("#grid").addEventListener("dragover",e=>{const c=e.target.closest(".dc");if(c){e.preventDefault();c.classList.add("over")}});
+$("#grid").addEventListener("dragleave",e=>e.target.closest(".dc")?.classList.remove("over"));
+$("#grid").addEventListener("drop",async e=>{const c=e.target.closest(".dc");if(!c)return;e.preventDefault();c.classList.remove("over");let p;try{p=JSON.parse(e.dataTransfer.getData("text/plain"))}catch{return}
+ const s=Math.min(DE-60,Math.max(DS,Math.floor(minAt(c,e.clientY)/SLOT)*SLOT));const base={schedule_id:S.active,day:+c.dataset.day,start_time:toT(s),end_time:toT(s+60),breakdown:[],cancelled:false,hide_time:false,is_oneoff:false};
+ if(p.tpl){const t=S.templates.find(x=>x.id===p.tpl);await createLessons([{...base,template_id:t.id,title:t.title,person:t.person,color:t.color,notes:t.notes}])}
+ else if(p.note)await createLessons([{...base,end_time:toT(s+30),title:p.note,person:"יוליה",color:"#e2eafc",is_oneoff:true,hide_time:true}]);
+ else await createLessons([{...base,title:"אירוע חד פעמי",color:"#fff700",is_oneoff:true}])});
+
+// ---------- panels ----------
+const pal=(cur,attr)=>`<div class="pal">${PAL.map(c=>`<div class="sw ${c===cur?"on":""}" ${attr}="${c}" style="background:${c}"></div>`).join("")}</div>`;
+function renderPanel(){const P=$("#panel");if(!S.editor){P.classList.add("hidden");return}
+ if(S.sel.size>=2){P.classList.remove("hidden");P.dataset.k="multi";P.innerHTML=`<b>${S.sel.size} פריטים נבחרו</b><label>צבע</label>${pal(null,"data-mc")}
+ <div class="row"><button data-m="hide">הסתר זמן</button><button data-m="show">הצג זמן</button><button data-m="cx">בטל</button><button data-m="uncx">החזר ביטול</button></div><div class="row"><button data-m="del" style="color:#c00">🗑 מחק</button><button data-m="close">סגור</button></div>`;return}
+ const l=S.lessons.find(x=>x.id===S.editing);if(!l){P.classList.add("hidden");P.dataset.k="";return}
+ if(P.dataset.k===l.id&&!P.classList.contains("hidden"))return;P.dataset.k=l.id;P.classList.remove("hidden");
+ P.innerHTML=`<label>כותרת</label><textarea id="eT" rows="3">${esc(l.title)}</textarea><label>אדם</label><input type="text" id="eP" value="${esc(l.person)}"><label>הערות</label><textarea id="eN" rows="2">${esc(l.notes)}</textarea>
+ <label>צבע</label>${pal(l.color,"data-c")}<div class="row">התחלה <input type="time" id="eS" step="1800" value="${l.start_time}"> סיום <input type="time" id="eE" step="1800" value="${l.end_time}"></div>
+ <div class="row"><label><input type="checkbox" id="eH" ${l.hide_time?"checked":""}> הסתר זמן</label><label><input type="checkbox" id="eX" ${l.cancelled?"checked":""}> בוטל</label></div>
+ <div class="row"><button id="eSave" class="dark" style="width:auto">שמור</button><button id="eDel" style="color:#c00">🗑 מחק</button><button id="eClose">סגור</button></div>`;P.dataset.color=l.color||""}
+async function saveEdit(){const l=S.lessons.find(x=>x.id===S.editing);if(!l)return;let s=toM($("#eS").value||l.start_time),e=toM($("#eE").value||l.end_time);s=clamp(snap(s));e=clamp(snap(e));if(e<=s)e=Math.min(DE,s+SLOT);
+ const p={title:$("#eT").value,person:$("#eP").value||null,notes:$("#eN").value||null,color:$("#panel").dataset.color||null,start_time:toT(s),end_time:toT(e),hide_time:$("#eH").checked,cancelled:$("#eX").checked};
+ S.editing=null;$("#panel").dataset.k="";if(Object.keys(p).some(k=>(p[k]??null)!==(l[k]??null)))await updLessons([l.id],p);else render()}
+$("#panel").addEventListener("click",async e=>{const t=e.target;
+ if(t.dataset.c){$("#panel").dataset.color=t.dataset.c;$("#panel").querySelectorAll(".sw").forEach(s=>s.classList.toggle("on",s===t))}
+ if(t.id==="eSave")saveEdit();if(t.id==="eClose"){S.editing=null;$("#panel").dataset.k="";render()}if(t.id==="eDel"){const id=S.editing;S.editing=null;$("#panel").dataset.k="";delLessons([id])}
+ const ids=[...S.sel];if(t.dataset.mc)updLessons(ids,{color:t.dataset.mc});
+ const m=t.dataset.m;if(m==="hide")updLessons(ids,{hide_time:true});if(m==="show")updLessons(ids,{hide_time:false});if(m==="cx")updLessons(ids,{cancelled:true});if(m==="uncx")updLessons(ids,{cancelled:false});
+ if(m==="del")delLessons(ids);if(m==="close"){S.sel.clear();render()}});
+$("#panel").addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.tagName!=="TEXTAREA"){e.preventDefault();saveEdit()}if(e.key==="Escape"){S.editing=null;$("#panel").dataset.k="";render()}});
+document.addEventListener("pointerdown",e=>{if(S.editing&&!e.target.closest("#panel")&&!e.target.closest(".L")&&!e.target.closest("#modal"))saveEdit()});
+
+// ---------- modal helpers ----------
+function modal(html){$("#modalIn").onclick=null;$("#modalIn").innerHTML=html;$("#modal").classList.remove("hidden");return $("#modalIn")}
+const closeModal=()=>$("#modal").classList.add("hidden");
+$("#modal").addEventListener("pointerdown",e=>{if(e.target.id==="modal")closeModal()});
+function ask(title,val){return new Promise(res=>{const m=modal(`<b>${title}</b><input id="aV" value="${esc(val||"")}" style="margin:10px 0"><div class="row"><button id="aOk" class="dark" style="width:auto">אישור</button><button id="aNo">ביטול</button></div>`);
+ m.querySelector("#aV").focus();m.querySelector("#aOk").onclick=()=>{closeModal();res(m.querySelector("#aV").value.trim())};m.querySelector("#aNo").onclick=()=>{closeModal();res(null)};m.querySelector("#aV").onkeydown=e=>{if(e.key==="Enter")m.querySelector("#aOk").click()}})}
+
+// ---------- templates ----------
+function tplDialog(t){t=t||{title:"",person:"",color:PAL[2],notes:""};let color=t.color;
+ const m=modal(`<b>${t.id?"עריכת חוג":"חוג חדש"}</b><label>שם</label><input id="tT" value="${esc(t.title)}"><label>אדם</label><input id="tP" value="${esc(t.person)}"><label>הערות</label><input id="tN" value="${esc(t.notes)}"><label>צבע</label>${pal(color,"data-tc")}
+ <div class="row"><button id="tOk" class="dark" style="width:auto">שמור</button>${t.id?`<button id="tDel" style="color:#c00">מחק</button>`:""}${t.id?`<button id="tUp">▲</button><button id="tDn">▼</button>`:""}<button id="tNo">ביטול</button></div>`);
+ m.onclick=async e=>{const x=e.target;if(x.dataset.tc){color=x.dataset.tc;m.querySelectorAll(".sw").forEach(s=>s.classList.toggle("on",s===x))}
+  if(x.id==="tNo")closeModal();
+  if(x.id==="tOk"){const p={title:m.querySelector("#tT").value.trim(),person:m.querySelector("#tP").value||null,notes:m.querySelector("#tN").value||null,color};if(!p.title)return toast("נדרש שם");closeModal();
+   if(t.id){err(await sb.from("lesson_templates").update(p).eq("id",t.id));Object.assign(t,p);const ids=S.lessons.filter(l=>l.template_id===t.id).map(l=>l.id);
+    err(await sb.from("lessons").update(p).eq("template_id",t.id));if(ids.length){push();S.lessons.forEach(l=>{if(l.template_id===t.id)Object.assign(l,p)})}}
+   else{p.order=S.templates.length;S.templates.push(...err(await sb.from("lesson_templates").insert(p).select()))}renderAll()}
+  if(x.id==="tDel"&&confirm("למחוק את החוג? שיעורים קיימים יישארו")){closeModal();err(await sb.from("lesson_templates").delete().eq("id",t.id));S.templates=S.templates.filter(y=>y!==t);renderAll()}
+  if(x.id==="tUp"||x.id==="tDn"){const i=S.templates.indexOf(t),j=i+(x.id==="tUp"?-1:1);if(j<0||j>=S.templates.length)return;[S.templates[i],S.templates[j]]=[S.templates[j],S.templates[i]];
+   await Promise.all(S.templates.map((y,k)=>(y.order=k,sb.from("lesson_templates").update({order:k}).eq("id",y.id))));renderSide()}}}
+$("#tplNew").onclick=()=>tplDialog();
+$("#side").addEventListener("click",e=>{if(e.target.dataset.et)tplDialog(S.templates.find(t=>t.id===e.target.dataset.et))});
+$("#side").addEventListener("change",e=>{const id=e.target.dataset.hl;if(id){e.target.checked?S.hl.add(id):S.hl.delete(id);renderHeader();render()}});
+$("#filterSel").onchange=e=>{S.hl=new Set(e.target.value?[e.target.value]:[]);renderSide();render()};
+
+// ---------- schedules ----------
+$("#schedSel").onchange=async e=>{const v=e.target.value;if(v.startsWith("r:")){const id=v.slice(2);err(await sb.from("schedules").update({archived:false}).eq("id",id));S.schedules.find(s=>s.id===id).archived=false;S.active=id}else S.active=v;await loadLessons()};
+$("#schedNew").onclick=async()=>{const n=await ask("שם המערכת החדשה","");if(!n)return;const r=err(await sb.from("schedules").insert({name:n}).select());S.schedules.push(...r);S.active=r[0].id;await loadLessons()};
+$("#schedDup").onclick=async()=>{const cur=S.schedules.find(s=>s.id===S.active);const n=await ask("שם לעותק",cur.name+" (עותק)");if(!n)return;
+ const r=err(await sb.from("schedules").insert({name:n,description:cur.description}).select());S.schedules.push(...r);if(S.lessons.length)err(await sb.from("lessons").insert(S.lessons.map(l=>({...pick(l),schedule_id:r[0].id}))));S.active=r[0].id;await loadLessons()};
+$("#schedRename").onclick=async()=>{const cur=S.schedules.find(s=>s.id===S.active);const n=await ask("שם חדש",cur.name);if(!n)return;err(await sb.from("schedules").update({name:n}).eq("id",cur.id));cur.name=n;renderHeader()};
+$("#schedArch").onclick=async()=>{const vis=S.schedules.filter(s=>!s.archived);if(vis.length<2)return toast("לא ניתן לארכב את המערכת האחרונה");if(!confirm("להעביר לארכיון?"))return;
+ err(await sb.from("schedules").update({archived:true}).eq("id",S.active));S.schedules.find(s=>s.id===S.active).archived=true;S.active=S.schedules.find(s=>!s.archived).id;await loadLessons()};
+
+// ---------- keyboard, undo, screenshot ----------
+$("#undoBtn").onclick=undo;
+document.addEventListener("keydown",e=>{if(!S.editor)return;const inF=/INPUT|TEXTAREA|SELECT/.test(e.target.tagName);if(inF)return;
+ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"||(e.ctrlKey||e.metaKey)&&e.code==="KeyZ"){e.preventDefault();undo()}
+ if(e.key==="Delete"||e.key==="Backspace"){const ids=S.sel.size?[...S.sel]:S.editing?[S.editing]:[];if(ids.length){e.preventDefault();S.editing=null;$("#panel").dataset.k="";delLessons(ids)}}
+ if(e.key==="Escape"){S.sel.clear();S.editing=null;render()}});
+$("#shotBtn").onclick=async()=>{const hl=S.hl,sel=S.sel;S.hl=new Set();S.sel=new Set();render();
+ try{const c=await html2canvas($("#grid"),{scale:2,backgroundColor:"#fff"});const blob=await new Promise(r=>c.toBlob(r,"image/png"));
+  try{await navigator.clipboard.write([new ClipboardItem({"image/png":blob})]);toast("התמונה הועתקה")}catch{const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="schedule.png";a.click();toast("התמונה הורדה")}}
+ finally{S.hl=hl;S.sel=sel;render()}};
+
+// ---------- auth ----------
+async function refreshAuth(){const{data:{session}}=await sb.auth.getSession();let ed=false;
+ if(session){const r=await sb.from("editors").select("email");ed=!!(r.data&&r.data.length)}
+ S.editor=ed;$("#who").textContent=session?session.user.email+(ed?"":" (צפייה בלבד)"):"";$("#loginBtn").textContent=session?"יציאה":"כניסה"}
+$("#loginBtn").onclick=async()=>{const{data:{session}}=await sb.auth.getSession();if(session){await sb.auth.signOut();await refreshAuth();renderAll();return}
+ const m=modal(`<b>כניסת עורכים</b><label>אימייל</label><input id="lE" type="email" dir="ltr"><label>סיסמה</label><input id="lP" type="password" dir="ltr"><div class="row"><button id="lOk" class="dark" style="width:auto">כניסה</button><button id="lNo">ביטול</button><button id="lF" class="small">שכחתי סיסמה</button></div>`);
+ m.querySelector("#lNo").onclick=closeModal;m.querySelector("#lP").onkeydown=e=>{if(e.key==="Enter")m.querySelector("#lOk").click()};
+ m.querySelector("#lF").onclick=async()=>{const em=m.querySelector("#lE").value;if(!em)return toast("הזן אימייל");await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname});toast("נשלח קישור לאיפוס")};
+ m.querySelector("#lOk").onclick=async()=>{const r=await sb.auth.signInWithPassword({email:m.querySelector("#lE").value.trim(),password:m.querySelector("#lP").value});if(r.error)return toast("כניסה נכשלה");closeModal();await refreshAuth();await loadAll()}};
+sb.auth.onAuthStateChange(async ev=>{if(ev==="PASSWORD_RECOVERY"){setTimeout(async()=>{const p=await ask("בחר סיסמה חדשה (8 תווים לפחות)","");if(p&&p.length>=8){const r=await sb.auth.updateUser({password:p});toast(r.error?"שגיאה: "+r.error.message:"הסיסמה נשמרה");await refreshAuth();renderAll()}},300)}});
+
+await refreshAuth();await loadAll();

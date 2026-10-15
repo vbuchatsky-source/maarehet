@@ -193,7 +193,7 @@ document.addEventListener("keydown",e=>{if(!S.editor)return;const inF=/INPUT|TEX
 $("#shotBtn").onclick=async()=>{const hl=S.hl,sel=S.sel;S.hl=new Set();S.sel=new Set();
  const box=document.createElement("div");box.style.cssText="position:absolute;left:0;top:0;width:1400px;background:#fff;z-index:-1";document.body.appendChild(box);
  try{for(const w of [sun(0),sun(1)]){const ls=w===S.week?S.lessons:err(await sb.from("lessons").select("*").eq("schedule_id",S.active).eq("week_start",w));if(!ls.length&&w!==sun(0))continue;
-   const t=document.createElement("div");t.className="wkT";t.textContent=wkTitle(w);box.appendChild(t);const g=document.createElement("div");g.className="gridX";g.style.cssText="display:grid;position:relative";
+   const t=document.createElement("div");t.className="wkT";if(box.children.length){const hr=document.createElement("div");hr.style.cssText="height:0;border-top:4px solid #333;margin:28px 0 18px";box.appendChild(hr)}t.textContent=wkTitle(w);box.appendChild(t);const g=document.createElement("div");g.className="gridX";g.style.cssText="display:grid;position:relative";
    g.innerHTML=gridHTML(g,ls,w);g.querySelectorAll(".rr,.cr,#eqW,.h").forEach(e=>e.remove());g.querySelectorAll(".hd").forEach(e=>e.style.position="static");box.appendChild(g);fit(g)}
   const c=await html2canvas(box,{scale:2,backgroundColor:"#fff",width:1400,windowWidth:1400,x:0,y:0,scrollX:0,scrollY:0});window._shot=c.toDataURL("image/png");const blob=await new Promise(r=>c.toBlob(r,"image/png"));
   try{await navigator.clipboard.write([new ClipboardItem({"image/png":blob})]);toast("התמונה הועתקה")}catch{const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="schedule.png";a.click();toast("התמונה הורדה")}}

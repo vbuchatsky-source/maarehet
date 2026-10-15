@@ -5,7 +5,7 @@ const PAL=["#fff700","#ededed","#3da9f4","#f4b084","#f79696","#fff2cc","#e2eafc"
 const NOTES=["☀️ יוליה בוקר","🌇 יוליה ערב","🌙 יוליה לילה"];
 const LF=["schedule_id","template_id","day","start_time","end_time","title","person","color","notes","is_oneoff","cancelled","hide_time","breakdown"];
 const $=s=>document.querySelector(s), esc=s=>(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const toM=t=>{const[h,m]=t.split(":").map(Number);return h*60+m}, toT=m=>String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
+const toM=t=>{const[h,m]=String(t).split(":").map(Number);return (h||0)*60+(m||0)}, toT=m=>String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
 const snap=m=>Math.round(m/SLOT)*SLOT, clamp=m=>Math.max(DS,Math.min(DE,m));
 let RH=+localStorage.getItem("rowH")||32, COLW=JSON.parse(localStorage.getItem("colW")||"null")||[1,1,1,1,1,1,1];
 let S={schedules:[],templates:[],lessons:[],active:null,editor:false,sel:new Set(),hist:[],hl:new Set(),undoing:false,editing:null};
@@ -110,12 +110,12 @@ function renderPanel(){const P=$("#panel");if(!S.editor){P.classList.add("hidden
  if(P.dataset.k===l.id&&!P.classList.contains("hidden"))return;P.dataset.k=l.id;P.classList.remove("hidden");
  P.innerHTML=`<div class="ph"><b>עריכה מהירה</b><button id="eClose" class="x" aria-label="סגור">×</button></div><div class="pb">
  <label>שם החוג</label><textarea id="eT" rows="2">${esc(l.title)}</textarea><label>שם האדם</label><input type="text" id="eP" value="${esc(l.person)}"><label>הערות</label><textarea id="eN" rows="2">${esc(l.notes)}</textarea>
- <label>צבע</label>${pal(l.color,"data-c")}<div class="g2"><div><label>שעת התחלה</label><input type="time" id="eS" step="1800" value="${l.start_time}"></div><div><label>שעת סיום</label><input type="time" id="eE" step="1800" value="${l.end_time}"></div></div>
+ <label>צבע</label>${pal(l.color,"data-c")}<div class="g2"><div><label>שעת התחלה</label><input type="text" dir="ltr" inputmode="numeric" placeholder="HH:MM" id="eS" value="${l.start_time}"></div><div><label>שעת סיום</label><input type="text" dir="ltr" inputmode="numeric" placeholder="HH:MM" id="eE" value="${l.end_time}"></div></div>
  <div class="sep"></div><div id="bdBox"></div><button id="bdAdd" class="lnk">+ פילוח מדריכים לפי שעות</button><div class="sep"></div>
  <button id="eH" class="tg ${l.hide_time?"on":""}">👁 הסתר זמן</button><button id="eX" class="tg ${l.cancelled?"on":""}">📅 בוטל השבוע</button>
  <div class="g2 ft"><button id="eDel" class="red">🗑 מחק</button><button id="eSave" class="blk">שמור</button></div><div id="eMsg" class="emsg"></div></div>`;
  P.dataset.color=l.color||"";S.bd=JSON.parse(JSON.stringify(l.breakdown||[]));drawBD();if(S.pPos){P.style.left=S.pPos[0]+"px";P.style.top=S.pPos[1]+"px"}}
-function drawBD(){$("#bdBox").innerHTML=S.bd.map((b,i)=>`<div class="bdr"><input type="text" placeholder="מדריך" data-bp="${i}" value="${esc(b.person)}"><input type="time" step="1800" data-bs="${i}" value="${b.start_time}"><input type="time" step="1800" data-be="${i}" value="${b.end_time}"><button data-bx="${i}" class="x">×</button></div>`).join("")}
+function drawBD(){$("#bdBox").innerHTML=S.bd.map((b,i)=>`<div class="bdr"><input type="text" placeholder="מדריך" data-bp="${i}" value="${esc(b.person)}"><input type="text" dir="ltr" placeholder="HH:MM" data-bs="${i}" value="${b.start_time}"><input type="text" dir="ltr" placeholder="HH:MM" data-be="${i}" value="${b.end_time}"><button data-bx="${i}" class="x">×</button></div>`).join("")}
 function readBD(){$("#bdBox").querySelectorAll("input").forEach(x=>{const i=x.dataset.bp??x.dataset.bs??x.dataset.be;const k=x.dataset.bp!=null?"person":x.dataset.bs!=null?"start_time":"end_time";S.bd[i][k]=x.value})}
 function validateBD(bd,s,e){if(!bd.length)return null;const L=bd.map(b=>[toM(b.start_time),toM(b.end_time)]).sort((a,b)=>a[0]-b[0]);
  if(L[0][0]!==s)return"הקטע הראשון חייב להתחיל בשעת תחילת השיעור";for(let i=0;i<L.length;i++){if(L[i][1]<=L[i][0])return"קטע עם סיום לפני התחלה";if(L[i][0]<s||L[i][1]>e)return"קטע מחוץ לטווח השיעור";if(i&&L[i][0]!==L[i-1][1])return"אסור פערים או חפיפות בין קטעים"}

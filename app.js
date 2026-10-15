@@ -11,7 +11,7 @@ let RH=+localStorage.getItem("rowH")||32, COLW=JSON.parse(localStorage.getItem("
 const ymd=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 const sun=off=>{const t=new Date();t.setHours(12,0,0,0);t.setDate(t.getDate()-t.getDay()+7*off);return ymd(t)};
 const dOf=(w,i)=>{const t=new Date(w+"T12:00:00");t.setDate(t.getDate()+i);return t};const dm=t=>t.getDate()+"."+(t.getMonth()+1);
-const wkTitle=w=>`${w===sun(0)?"השבוע":w===sun(1)?"שבוע הבא":"שבוע"} ${dm(dOf(w,0))}–${dm(dOf(w,6))}`;
+const wkTitle=w=>`${w===sun(0)?"השבוע":w===sun(1)?"שבוע הבא":"שבוע"} \u2066${dm(dOf(w,0))}–${dm(dOf(w,6))}\u2069`;
 let S={week:sun(+(localStorage.getItem("weekTab")||0))===sun(1)?sun(1):sun(0),hasNext:false,schedules:[],templates:[],lessons:[],active:null,editor:false,sel:new Set(),hist:[],hl:new Set(),undoing:false,editing:null};
 const toast=t=>{const e=$("#toast");e.textContent=t;e.classList.add("on");setTimeout(()=>e.classList.remove("on"),2200)};
 const err=(r)=>{if(r.error){console.error(r.error);toast("שגיאה: "+r.error.message);throw r.error}return r.data};

@@ -39,3 +39,5 @@ main{display:flex;height:calc(100vh - 52px)}#gridWrap{flex:1;overflow:auto}
 .L .t,.L .n{font-size:.88em}.L .t{white-space:nowrap}.nw{white-space:nowrap}.L{overflow-wrap:normal;word-break:normal;padding:3px 3px}
 .L.note{white-space:nowrap;padding-top:2px}
 #gridX .L{font-family:system-ui,Arial,sans-serif}
+
+.hd .dt{font-size:.75em;font-weight:400;opacity:.7;margin-right:6px}

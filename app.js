@@ -120,7 +120,7 @@ function readBD(){$("#bdBox").querySelectorAll("input").forEach(x=>{const i=x.da
 function validateBD(bd,s,e){if(!bd.length)return null;const L=bd.map(b=>[toM(b.start_time),toM(b.end_time)]).sort((a,b)=>a[0]-b[0]);
  if(L[0][0]!==s)return"הקטע הראשון חייב להתחיל בשעת תחילת השיעור";for(let i=0;i<L.length;i++){if(L[i][1]<=L[i][0])return"קטע עם סיום לפני התחלה";if(L[i][0]<s||L[i][1]>e)return"קטע מחוץ לטווח השיעור";if(i&&L[i][0]!==L[i-1][1])return"אסור פערים או חפיפות בין קטעים"}
  if(L.at(-1)[1]!==e)return"הקטע האחרון חייב להסתיים בשעת סיום השיעור";return null}
-async function saveEdit(){const l=S.lessons.find(x=>x.id===S.editing);if(!l)return;let s=toM($("#eS").value||l.start_time),e=toM($("#eE").value||l.end_time);s=clamp(snap(s));e=clamp(snap(e));if(e<=s)e=Math.min(DE,s+SLOT);
+async function saveEdit(){const l=S.lessons.find(x=>x.id===S.editing);if(!l)return;let s=toM($("#eS").value||l.start_time),e=toM($("#eE").value||l.end_time);s=clamp(s);e=clamp(e);if(e<=s)e=Math.min(DE,s+SLOT);
  readBD();const bd=S.bd.filter(b=>b.start_time&&b.end_time).sort((a,b)=>toM(a.start_time)-toM(b.start_time));const ve=validateBD(bd,s,e);if(ve){$("#eMsg").textContent=ve;return}
  const p={breakdown:bd,title:$("#eT").value,person:$("#eP").value||null,notes:$("#eN").value||null,color:$("#panel").dataset.color||null,start_time:toT(s),end_time:toT(e),hide_time:$("#eH").classList.contains("on"),cancelled:$("#eX").classList.contains("on")};
  S.editing=null;$("#panel").dataset.k="";if(Object.keys(p).some(k=>JSON.stringify(p[k]??null)!==JSON.stringify(l[k]??null)))await updLessons([l.id],p);else render()}

@@ -3,3 +3,4 @@ sql.sh
 node_modules
 dist
 *.sql
+vitaly-reset-link.txt

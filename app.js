@@ -3,12 +3,16 @@ const sb = createClient(window.SB_URL, window.SB_ANON);
 const DS=480, DE=1260, SLOT=30, DAYS=["א","ב","ג","ד","ה","ו","שבת"];
 const PAL=["#fff700","#ededed","#3da9f4","#f4b084","#f79696","#fff2cc","#e2eafc","#b6d7a8","#d5a6bd","#ffe599","#a4c2f4","#f9cb9c","#b4a7d6","#a2c4c9"];
 const NOTES=["☀️ יוליה בוקר","🌇 יוליה ערב","🌙 יוליה לילה"];
-const LF=["schedule_id","template_id","day","start_time","end_time","title","person","color","notes","is_oneoff","cancelled","hide_time","breakdown"];
+const LF=["schedule_id","template_id","day","start_time","end_time","title","person","color","notes","is_oneoff","cancelled","hide_time","breakdown","week_start"];
 const $=s=>document.querySelector(s), esc=s=>(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const toM=t=>{const[h,m]=String(t).split(":").map(Number);return (h||0)*60+(m||0)}, toT=m=>String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
 const snap=m=>Math.round(m/SLOT)*SLOT, clamp=m=>Math.max(DS,Math.min(DE,m));
 let RH=+localStorage.getItem("rowH")||32, COLW=JSON.parse(localStorage.getItem("colW")||"null")||[1,1,1,1,1,1,1];
-let S={schedules:[],templates:[],lessons:[],active:null,editor:false,sel:new Set(),hist:[],hl:new Set(),undoing:false,editing:null};
+const ymd=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const sun=off=>{const t=new Date();t.setHours(12,0,0,0);t.setDate(t.getDate()-t.getDay()+7*off);return ymd(t)};
+const dOf=(w,i)=>{const t=new Date(w+"T12:00:00");t.setDate(t.getDate()+i);return t};const dm=t=>t.getDate()+"."+(t.getMonth()+1);
+const wkTitle=w=>`${w===sun(0)?"השבוע":w===sun(1)?"שבוע הבא":"שבוע"} ${dm(dOf(w,0))}–${dm(dOf(w,6))}`;
+let S={week:sun(+(localStorage.getItem("weekTab")||0))===sun(1)?sun(1):sun(0),hasNext:false,schedules:[],templates:[],lessons:[],active:null,editor:false,sel:new Set(),hist:[],hl:new Set(),undoing:false,editing:null};
 const toast=t=>{const e=$("#toast");e.textContent=t;e.classList.add("on");setTimeout(()=>e.classList.remove("on"),2200)};
 const err=(r)=>{if(r.error){console.error(r.error);toast("שגיאה: "+r.error.message);throw r.error}return r.data};
 const pick=l=>Object.fromEntries(LF.map(k=>[k,l[k]]));
@@ -21,7 +25,7 @@ async function undo(){if(!S.hist.length||S.undoing)return;S.undoing=true;const s
   S.lessons=snapL;render()}finally{S.undoing=false;$("#undoBtn").disabled=!S.hist.length}}
 
 // ---------- data ops ----------
-async function createLessons(arr){push();const rows=err(await sb.from("lessons").insert(arr.map(pick)).select());S.lessons.push(...rows);render();return rows}
+async function createLessons(arr){push();const rows=err(await sb.from("lessons").insert(arr.map(x=>({...pick(x),week_start:x.week_start||S.week}))).select());S.lessons.push(...rows);render();return rows}
 async function updLessons(ids,patch,noHist){if(!noHist)push();S.lessons.forEach(l=>{if(ids.includes(l.id))Object.assign(l,patch)});render();err(await sb.from("lessons").update(patch).in("id",ids))}
 async function updEach(list){push();list.forEach(([id,p])=>Object.assign(S.lessons.find(l=>l.id===id),p));render();await Promise.all(list.map(([id,p])=>sb.from("lessons").update(p).eq("id",id).then(err)))}
 async function delLessons(ids){push();S.lessons=S.lessons.filter(l=>!ids.includes(l.id));ids.forEach(i=>S.sel.delete(i));render();err(await sb.from("lessons").delete().in("id",ids))}
@@ -37,9 +41,10 @@ async function loadAll(){
  let vis=S.schedules.filter(s=>!s.archived);
  if(!vis.length&&S.editor){const r=err(await sb.from("schedules").insert({name:"מערכת ראשית"}).select());S.schedules.push(...r);vis=r}
  const saved=localStorage.getItem("activeScheduleId");S.active=vis.find(s=>s.id===saved)?saved:vis[0]?.id;await loadLessons()}
-async function loadLessons(){S.lessons=S.active?err(await sb.from("lessons").select("*").eq("schedule_id",S.active)):[];S.hist=[];S.sel.clear();$("#undoBtn").disabled=true;localStorage.setItem("activeScheduleId",S.active||"");subscribe();renderAll()}
+async function loadLessons(){S.lessons=S.active?err(await sb.from("lessons").select("*").eq("schedule_id",S.active).eq("week_start",S.week)):[];
+ S.hasNext=S.active?!!err(await sb.from("lessons").select("id").eq("schedule_id",S.active).eq("week_start",sun(1)).limit(1)).length:false;S.hist=[];S.sel.clear();$("#undoBtn").disabled=true;localStorage.setItem("activeScheduleId",S.active||"");subscribe();renderAll()}
 let chan;function subscribe(){if(chan)sb.removeChannel(chan);if(!S.active)return;chan=sb.channel("l"+S.active).on("postgres_changes",{event:"*",schema:"public",table:"lessons"},p=>{
- if(p.eventType==="DELETE"){S.lessons=S.lessons.filter(l=>l.id!==p.old.id)}else{const n=p.new;if(n.schedule_id!==S.active)return;const i=S.lessons.findIndex(l=>l.id===n.id);if(i>=0){if(S.drag)return;S.lessons[i]=n}else S.lessons.push(n)}render()}).subscribe()}
+ if(p.eventType==="DELETE"){S.lessons=S.lessons.filter(l=>l.id!==p.old.id)}else{const n=p.new;if(n.schedule_id!==S.active||n.week_start!==S.week)return;const i=S.lessons.findIndex(l=>l.id===n.id);if(i>=0){if(S.drag)return;S.lessons[i]=n}else S.lessons.push(n)}render()}).subscribe()}
 
 // ---------- layout ----------
 function layout(ls){const out=new Map();for(let d=0;d<7;d++){const day=ls.filter(l=>l.day===d).sort((a,b)=>toM(a.start_time)-toM(b.start_time)||toM(b.end_time)-toM(a.end_time));
@@ -54,17 +59,20 @@ function renderHeader(){const vis=S.schedules.filter(s=>!s.archived),ar=S.schedu
  $("#filterSel").innerHTML=`<option value="">כל החוגים</option>`+S.templates.map(t=>`<option value="${t.id}" ${S.hl.size===1&&S.hl.has(t.id)?"selected":""}>${esc(t.title)}</option>`).join("")}
 function renderSide(){$("#tplList").innerHTML=S.templates.map(t=>`<div class="tpl" draggable="true" data-tpl="${t.id}" style="background:${t.color||"#eee"}"><input type="checkbox" data-hl="${t.id}" ${S.hl.has(t.id)?"checked":""} title="הדגש"><span>${esc(t.title)}</span><button class="e" data-et="${t.id}" title="ערוך">✎</button></div>`).join("");
  $("#noteList").innerHTML=NOTES.map(n=>`<div class="note" draggable="true" data-note="${esc(n)}">${esc(n)}</div>`).join("")}
-function render(){const g=$("#grid"),H=(DE-DS)/SLOT*RH;g.style.gridTemplateColumns=`56px ${COLW.map(w=>w+"fr").join(" ")}`;g.style.setProperty("--rh",RH+"px");
- let h=`<div class="hd"><button id="eqW" class="ed small" title="שווה עובי" aria-label="שווה עובי">≡</button></div>`+DAYS.map((d,i)=>`<div class="hd">${d}<span class="dt">${(()=>{const t=new Date();t.setDate(t.getDate()-t.getDay()+i);return t.getDate()+"."+(t.getMonth()+1)})()}</span>${i<6?`<div class="cr ed" data-cr="${i}" title="גרור לשינוי רוחב"></div>`:""}</div>`).join("");
+function gridHTML(g,lessons,week){const H=(DE-DS)/SLOT*RH;g.style.gridTemplateColumns=`56px ${COLW.map(w=>w+"fr").join(" ")}`;g.style.setProperty("--rh",RH+"px");
+ let h=`<div class="hd"><button id="eqW" class="ed small" title="שווה עובי" aria-label="שווה עובי">≡</button></div>`+DAYS.map((d,i)=>`<div class="hd">${d}<span class="dt">${dm(dOf(week,i))}</span>${i<6?`<div class="cr ed" data-cr="${i}" title="גרור לשינוי רוחב"></div>`:""}</div>`).join("");
  h+=`<div class="tc" style="height:${H}px">`;for(let m=DS+SLOT;m<DE;m+=SLOT)h+=`<div class="tl" style="top:${(m-DS)/SLOT*RH}px">${toT(m)}</div><div class="rr ed" data-rr="${(m-DS)/SLOT}" style="top:${(m-DS)/SLOT*RH}px" title="גרור לשינוי גובה השורות"></div>`;h+=`</div>`;
- const seen=new Set(),ls=S.lessons.filter(l=>!seen.has(l.id)&&seen.add(l.id)),lay=layout(ls);
+ const seen=new Set(),ls=lessons.filter(l=>!seen.has(l.id)&&seen.add(l.id)),lay=layout(ls);
  for(let d=0;d<7;d++){h+=`<div class="dc" data-day="${d}" style="height:${H}px">`;
   ls.filter(l=>l.day===d).forEach(l=>{const s=clamp(toM(l.start_time)),e=Math.max(s+SLOT,clamp(toM(l.end_time))),p=lay.get(l.id)||{c:0,n:1},w=100/p.n;
    const cls=["L",l.cancelled?"cx":"",S.sel.has(l.id)?"sel":"",l.is_oneoff&&l.hide_time&&e-s<=SLOT?"note":"",S.hl.size?(S.hl.has(l.template_id)?"hl":"dim"):""].join(" ");
    const bd=(l.breakdown||[]).length?`<div class="t">${l.breakdown.map(b=>esc(`${b.person||""} ${b.start_time}-${b.end_time}`)).join("<br>")}</div>`:"";
    h+=`<div class="${cls}" data-id="${l.id}" style="top:${(s-DS)/SLOT*RH+1}px;height:${(e-s)/SLOT*RH-2}px;right:calc(${p.c*w}% + 2px);width:calc(${w}% - 4px);background:${l.color||"#eee"}"><div class="h a"></div>${nw(l.title)}${l.person&&!(l.is_oneoff&&l.hide_time)?`<div class="n">${esc(l.person)}</div>`:""}${l.hide_time?"":`<div class="t">${l.start_time}-${l.end_time}</div>`}${l.notes?`<div class="n">${nw(l.notes)}</div>`:""}${bd}${l.cancelled?`<span class="bdg">בוטל</span>`:""}<div class="h b"></div></div>`});
   h+=`</div>`}
- g.innerHTML=h;fit(g);renderPanel()}
+ return h}
+function render(){const g=$("#grid");$("#wkT").textContent=wkTitle(S.week);document.querySelectorAll("[data-wk]").forEach(b=>b.classList.toggle("on",b.dataset.wk==(S.week===sun(1)?1:0)));
+ $("#mkNext").classList.toggle("hidden",!(S.editor&&!S.hasNext));
+ g.innerHTML=gridHTML(g,S.lessons,S.week);fit(g);renderPanel()}
 
 // ---------- row/col resize ----------
 $("#grid").addEventListener("pointerdown",e=>{const t=e.target;if(!S.editor)return;
@@ -182,12 +190,17 @@ document.addEventListener("keydown",e=>{if(!S.editor)return;const inF=/INPUT|TEX
  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"||(e.ctrlKey||e.metaKey)&&e.code==="KeyZ"){e.preventDefault();undo()}
  if(e.key==="Delete"||e.key==="Backspace"){const ids=S.sel.size?[...S.sel]:S.editing?[S.editing]:[];if(ids.length){e.preventDefault();S.editing=null;$("#panel").dataset.k="";delLessons(ids)}}
  if(e.key==="Escape"){S.sel.clear();S.editing=null;render()}});
-$("#shotBtn").onclick=async()=>{const hl=S.hl,sel=S.sel;S.hl=new Set();S.sel=new Set();render();
- const box=document.createElement("div");box.style.cssText="position:absolute;left:0;top:0;width:1400px;background:#fff;z-index:-1";const cl=$("#grid").cloneNode(true);cl.id="gridX";cl.style.minWidth="0";cl.style.display="grid";cl.style.position="relative";
- cl.querySelectorAll(".rr,.cr,#eqW,.h").forEach(e=>e.remove());cl.querySelectorAll(".hd").forEach(e=>e.style.position="static");box.appendChild(cl);document.body.appendChild(box);fit(cl);
- try{const c=await html2canvas(cl,{scale:2,backgroundColor:"#fff",width:1400,windowWidth:1400,x:0,y:0,scrollX:0,scrollY:0});window._shot=c.toDataURL("image/png");const blob=await new Promise(r=>c.toBlob(r,"image/png"));
+$("#shotBtn").onclick=async()=>{const hl=S.hl,sel=S.sel;S.hl=new Set();S.sel=new Set();
+ const box=document.createElement("div");box.style.cssText="position:absolute;left:0;top:0;width:1400px;background:#fff;z-index:-1";document.body.appendChild(box);
+ try{for(const w of [sun(0),sun(1)]){const ls=w===S.week?S.lessons:err(await sb.from("lessons").select("*").eq("schedule_id",S.active).eq("week_start",w));if(!ls.length&&w!==sun(0))continue;
+   const t=document.createElement("div");t.className="wkT";t.textContent=wkTitle(w);box.appendChild(t);const g=document.createElement("div");g.className="gridX";g.style.cssText="display:grid;position:relative";
+   g.innerHTML=gridHTML(g,ls,w);g.querySelectorAll(".rr,.cr,#eqW,.h").forEach(e=>e.remove());g.querySelectorAll(".hd").forEach(e=>e.style.position="static");box.appendChild(g);fit(g)}
+  const c=await html2canvas(box,{scale:2,backgroundColor:"#fff",width:1400,windowWidth:1400,x:0,y:0,scrollX:0,scrollY:0});window._shot=c.toDataURL("image/png");const blob=await new Promise(r=>c.toBlob(r,"image/png"));
   try{await navigator.clipboard.write([new ClipboardItem({"image/png":blob})]);toast("התמונה הועתקה")}catch{const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="schedule.png";a.click();toast("התמונה הורדה")}}
  finally{box.remove();S.hl=hl;S.sel=sel;render()}};
+document.querySelectorAll("[data-wk]").forEach(b=>b.onclick=async()=>{const o=+b.dataset.wk;localStorage.setItem("weekTab",o);S.week=sun(o);S.editing=null;await loadLessons()});
+$("#mkNext").onclick=async()=>{const src=err(await sb.from("lessons").select("*").eq("schedule_id",S.active).eq("week_start",sun(0)));
+ if(src.length)err(await sb.from("lessons").insert(src.map(l=>({...pick(l),week_start:sun(1)}))));localStorage.setItem("weekTab",1);S.week=sun(1);await loadLessons();toast("שבוע הבא נוצר כהעתק")};
 
 // ---------- auth ----------
 async function refreshAuth(){const{data:{session}}=await sb.auth.getSession();let ed=false;

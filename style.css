@@ -41,3 +41,7 @@ main{display:flex;height:calc(100vh - 52px)}#gridWrap{flex:1;overflow:auto}
 #gridX .L{font-family:system-ui,Arial,sans-serif}
 
 .hd .dt{font-size:.75em;font-weight:400;opacity:.7;margin-right:6px}
+
+.tabs{display:inline-flex;border:1px solid #ccc;border-radius:8px;overflow:hidden}.tabs button{border:0;border-radius:0;padding:5px 14px}.tabs button.on{background:#111;color:#fff}
+.wkbar{display:flex;align-items:center;gap:12px;padding:8px 12px}.wkT{font-size:24px;font-weight:800;display:block;padding:10px 14px}
+.gridX{margin-bottom:24px}

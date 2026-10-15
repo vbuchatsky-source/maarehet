@@ -1,5 +1,5 @@
 <!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>מערכת שעות</title><link rel="stylesheet" href="style.css?v=9">
+<title>מערכת שעות</title><link rel="stylesheet" href="style.css?v=10">
 <script>window.SB_URL="https://uhwpebxwodcqwvzewsun.supabase.co";window.GOOGLE_ON=true;window.SB_ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVod3BlYnh3b2RjcXd2emV3c3VuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIwNTAyNjEsImV4cCI6MjEwNzYyNjI2MX0.iKigDccW795GAK8mEAXcqiG5lfrWLNRo0e9VJiAUf1w";</script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>
 </head><body>
@@ -8,15 +8,16 @@
  <button id="undoBtn" class="ed" title="בטל (Ctrl+Z)" aria-label="בטל">↶ בטל</button>
  <button id="shotBtn" title="העתק תמונה" aria-label="העתק תמונה">📷 העתק תמונה</button>
  <label class="f">סינון לפי חוג: <select id="filterSel"></select></label>
+ <span class="tabs"><button data-wk="0">השבוע</button><button data-wk="1">שבוע הבא</button></span>
  <label class="f">מערכת: <select id="schedSel"></select></label>
  <span class="ed"><button id="schedRename" title="שנה שם">✎</button><button id="schedDup" title="שכפל">⧉</button><button id="schedNew">+ מערכת חדשה</button><button id="schedArch" title="ארכיון">🗄</button></span>
  <span class="sp"></span><span id="who"></span><button id="loginBtn" class="small">כניסה</button>
 </header>
-<main><div id="gridWrap"><div id="grid"></div></div>
+<main><div id="gridWrap"><div class="wkbar"><span id="wkT" class="wkT"></span><button id="mkNext" class="ed hidden">צור שבוע הבא (העתק)</button></div><div id="grid"></div></div>
 <aside id="side" class="ed">
  <div class="sh">חוגים לגרירה</div><button id="tplNew" class="dark">+ חוג חדש</button><div id="tplList"></div>
  <div class="notesBox"><div class="sh red">Notes</div><div id="noteList"></div></div>
  <div id="oneoff" class="oneoff" draggable="true">✨<br>אירוע חד פעמי<br><small>גרור ללוח ליצירת אירוע</small></div>
 </aside></main>
 <div id="panel" class="panel hidden"></div><div id="modal" class="modalbg hidden"><div class="modal" id="modalIn"></div></div><div id="toast"></div>
-<script type="module" src="app.js?v=9"></script></body></html>
+<script type="module" src="app.js?v=10"></script></body></html>

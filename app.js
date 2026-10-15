@@ -164,10 +164,20 @@ async function refreshAuth(){const{data:{session}}=await sb.auth.getSession();le
  if(session){const r=await sb.from("editors").select("email");ed=!!(r.data&&r.data.length)}
  S.editor=ed;$("#who").textContent=session?session.user.email+(ed?"":" (צפייה בלבד)"):"";$("#loginBtn").textContent=session?"יציאה":"כניסה"}
 $("#loginBtn").onclick=async()=>{const{data:{session}}=await sb.auth.getSession();if(session){await sb.auth.signOut();await refreshAuth();renderAll();return}
- const m=modal(`<b>כניסת עורכים</b><label>אימייל</label><input id="lE" type="email" dir="ltr"><label>סיסמה</label><input id="lP" type="password" dir="ltr"><div class="row"><button id="lOk" class="dark" style="width:auto">כניסה</button><button id="lNo">ביטול</button><button id="lF" class="small">שכחתי סיסמה</button></div>`);
+ const RD=location.origin+location.pathname;
+ const m=modal(`<h3 style="margin:0 0 10px">כניסת עורכים</h3><label>אימייל</label><input id="lE" type="email" dir="ltr" autocomplete="email">
+ <div class="row"><button id="lM" class="dark" style="width:100%">שלחו לי קישור כניסה</button></div>
+ ${window.GOOGLE_ON?`<div class="row"><button id="lG" style="width:100%">כניסה עם Google</button></div>`:""}
+ <details style="margin-top:12px"><summary style="cursor:pointer;font-size:13px;color:#555">כניסה עם סיסמה</summary><label>סיסמה</label><input id="lP" type="password" dir="ltr">
+ <div class="row"><button id="lOk">כניסה</button><button id="lF" class="small">שכחתי סיסמה</button></div></details>
+ <div class="row"><button id="lNo" class="small">ביטול</button></div><div id="lMsg" style="font-size:13px;margin-top:6px"></div>`);
+ const em=()=>m.querySelector("#lE").value.trim(),msg=t=>m.querySelector("#lMsg").textContent=t;
  m.querySelector("#lNo").onclick=closeModal;m.querySelector("#lP").onkeydown=e=>{if(e.key==="Enter")m.querySelector("#lOk").click()};
- m.querySelector("#lF").onclick=async()=>{const em=m.querySelector("#lE").value;if(!em)return toast("הזן אימייל");await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname});toast("נשלח קישור לאיפוס")};
- m.querySelector("#lOk").onclick=async()=>{const r=await sb.auth.signInWithPassword({email:m.querySelector("#lE").value.trim(),password:m.querySelector("#lP").value});if(r.error)return toast("כניסה נכשלה");closeModal();await refreshAuth();await loadAll()}};
+ m.querySelector("#lM").onclick=async()=>{if(!em())return msg("הזן אימייל");const r=await sb.auth.signInWithOtp({email:em(),options:{shouldCreateUser:false,emailRedirectTo:RD}});msg(r.error?"לא ניתן לשלוח (האם האימייל מורשה?)":"נשלח קישור כניסה לאימייל שלך")};
+ m.querySelector("#lG")?.addEventListener("click",()=>sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:RD}}));
+ m.querySelector("#lF").onclick=async()=>{if(!em())return msg("הזן אימייל");await sb.auth.resetPasswordForEmail(em(),{redirectTo:RD});msg("נשלח קישור לאיפוס")};
+ m.querySelector("#lOk").onclick=async()=>{const r=await sb.auth.signInWithPassword({email:em(),password:m.querySelector("#lP").value});if(r.error)return msg("כניסה נכשלה");closeModal();await refreshAuth();await loadAll()}};
+sb.auth.onAuthStateChange(async ev=>{if(ev==="SIGNED_IN"&&!S.editor){await refreshAuth();await loadAll()}});
 sb.auth.onAuthStateChange(async ev=>{if(ev==="PASSWORD_RECOVERY"){setTimeout(async()=>{const p=await ask("בחר סיסמה חדשה (8 תווים לפחות)","");if(p&&p.length>=8){const r=await sb.auth.updateUser({password:p});toast(r.error?"שגיאה: "+r.error.message:"הסיסמה נשמרה");await refreshAuth();renderAll()}},300)}});
 
 await refreshAuth();await loadAll();

@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const sb = createClient(window.SB_URL, window.SB_ANON);
-const DS=480, DE=1260, SLOT=30, RH=28, DAYS=["א","ב","ג","ד","ה","ו","שבת"];
+const DS=480, DE=1260, SLOT=30, RH=32, DAYS=["א","ב","ג","ד","ה","ו","שבת"];
 const PAL=["#fff700","#ededed","#3da9f4","#f4b084","#f79696","#fff2cc","#e2eafc","#b6d7a8","#d5a6bd","#ffe599","#a4c2f4","#f9cb9c","#b4a7d6","#a2c4c9"];
 const NOTES=["☀️ יוליה בוקר","🌇 יוליה ערב","🌙 יוליה לילה"];
 const LF=["schedule_id","template_id","day","start_time","end_time","title","person","color","notes","is_oneoff","cancelled","hide_time","breakdown"];

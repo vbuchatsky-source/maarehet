@@ -60,7 +60,7 @@ function render(){const g=$("#grid"),H=(DE-DS)/SLOT*RH;g.style.gridTemplateColum
  const seen=new Set(),ls=S.lessons.filter(l=>!seen.has(l.id)&&seen.add(l.id)),lay=layout(ls);
  for(let d=0;d<7;d++){h+=`<div class="dc" data-day="${d}" style="height:${H}px">`;
   ls.filter(l=>l.day===d).forEach(l=>{const s=clamp(toM(l.start_time)),e=Math.max(s+SLOT,clamp(toM(l.end_time))),p=lay.get(l.id)||{c:0,n:1},w=100/p.n;
-   const cls=["L",l.cancelled?"cx":"",S.sel.has(l.id)?"sel":"",l.is_oneoff&&l.hide_time?"note":"",S.hl.size?(S.hl.has(l.template_id)?"hl":"dim"):""].join(" ");
+   const cls=["L",l.cancelled?"cx":"",S.sel.has(l.id)?"sel":"",l.is_oneoff&&l.hide_time&&e-s<=SLOT?"note":"",S.hl.size?(S.hl.has(l.template_id)?"hl":"dim"):""].join(" ");
    const bd=(l.breakdown||[]).length?`<div class="t">${l.breakdown.map(b=>esc(`${b.person||""} ${b.start_time}-${b.end_time}`)).join("<br>")}</div>`:"";
    h+=`<div class="${cls}" data-id="${l.id}" style="top:${(s-DS)/SLOT*RH+1}px;height:${(e-s)/SLOT*RH-2}px;right:calc(${p.c*w}% + 2px);width:calc(${w}% - 4px);background:${l.color||"#eee"}"><div class="h a"></div>${nw(l.title)}${l.person&&!(l.is_oneoff&&l.hide_time)?`<div class="n">${esc(l.person)}</div>`:""}${l.hide_time?"":`<div class="t">${l.start_time}-${l.end_time}</div>`}${l.notes?`<div class="n">${nw(l.notes)}</div>`:""}${bd}${l.cancelled?`<span class="bdg">בוטל</span>`:""}<div class="h b"></div></div>`});
   h+=`</div>`}
@@ -183,7 +183,7 @@ document.addEventListener("keydown",e=>{if(!S.editor)return;const inF=/INPUT|TEX
  if(e.key==="Delete"||e.key==="Backspace"){const ids=S.sel.size?[...S.sel]:S.editing?[S.editing]:[];if(ids.length){e.preventDefault();S.editing=null;$("#panel").dataset.k="";delLessons(ids)}}
  if(e.key==="Escape"){S.sel.clear();S.editing=null;render()}});
 $("#shotBtn").onclick=async()=>{const hl=S.hl,sel=S.sel;S.hl=new Set();S.sel=new Set();render();
- const box=document.createElement("div");box.style.cssText="position:fixed;left:-10000px;top:0;width:1400px;background:#fff";const cl=$("#grid").cloneNode(true);cl.id="gridX";cl.style.minWidth="0";
+ const box=document.createElement("div");box.style.cssText="position:fixed;left:-10000px;top:0;width:1400px;background:#fff";const cl=$("#grid").cloneNode(true);cl.id="gridX";cl.style.minWidth="0";cl.style.display="grid";cl.style.position="relative";
  cl.querySelectorAll(".rr,.cr,#eqW,.h").forEach(e=>e.remove());cl.querySelectorAll(".hd").forEach(e=>e.style.position="static");box.appendChild(cl);document.body.appendChild(box);fit(cl);
  try{const c=await html2canvas(cl,{scale:2,backgroundColor:"#fff",width:1400,windowWidth:1400});window._shot=c.toDataURL("image/png");const blob=await new Promise(r=>c.toBlob(r,"image/png"));
   try{await navigator.clipboard.write([new ClipboardItem({"image/png":blob})]);toast("התמונה הועתקה")}catch{const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="schedule.png";a.click();toast("התמונה הורדה")}}
